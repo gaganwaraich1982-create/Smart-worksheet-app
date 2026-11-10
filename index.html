@@ -1,0 +1,159 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#7654c5">
+<title>Smart Worksheet</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#f5f0ff;color:#29213b}
+header{background:#7654c5;color:white;padding:20px;text-align:center}
+main{padding:16px;max-width:700px;margin:auto}
+.card{background:white;padding:16px;border-radius:16px;margin:14px 0;box-shadow:0 3px 12px #0001}
+button,.upload{background:#7654c5;color:white;border:0;padding:12px 16px;border-radius:10px;font-size:15px;margin:5px;cursor:pointer}
+input,textarea{width:100%;padding:12px;border:1px solid #d7cbea;border-radius:9px;margin:8px 0;font-size:16px}
+textarea{min-height:90px}
+.question{border-bottom:1px solid #eee;padding:12px 0}
+.small{color:#71677f;font-size:13px}
+#status{font-size:14px;color:#7654c5}
+</style>
+</head>
+<body>
+<header>
+<h1>📚 Smart Worksheet</h1>
+<p>Upload • Read • Answer • Review</p>
+</header>
+<main>
+<div class="card">
+<h3>Upload worksheet photo</h3>
+<input type="file" id="photo" accept="image/*" multiple>
+<button onclick="readPhotos()">Read worksheet</button>
+<p id="status">Choose a worksheet photo to begin.</p>
+</div>
+
+<div class="card">
+<h3 id="pageTitle">Worksheet Page 1</h3>
+<div id="questions"></div>
+<button onclick="addNextPage()">Next Page ➜</button>
+<button onclick="showResults()">View Results</button>
+</div>
+
+<div class="card" id="results" hidden>
+<h2>📝 Your Answers</h2>
+<div id="resultContent"></div>
+<button onclick="window.print()">Print Results</button>
+</div>
+</main>
+
+<script>
+let pages=[];
+let currentPage=0;
+
+function makePage(){
+return {questions:[]};
+}
+pages.push(makePage());
+
+function render(){
+document.getElementById("pageTitle").textContent=
+"Worksheet Page "+(currentPage+1);
+let area=document.getElementById("questions");
+area.innerHTML="";
+pages[currentPage].questions.forEach((q,i)=>{
+let div=document.createElement("div");
+div.className="question";
+let title=document.createElement("b");
+title.textContent="Question "+(i+1)+": "+q.text;
+let answer=document.createElement("textarea");
+answer.placeholder="Write your answer here...";
+answer.value=q.answer||"";
+answer.oninput=()=>q.answer=answer.value;
+let voice=document.createElement("button");
+voice.textContent="🎤 Speak Answer";
+voice.onclick=()=>speakAnswer(i);
+div.append(title,answer,voice);
+area.appendChild(div);
+});
+}
+
+async function readPhotos(){
+let files=document.getElementById("photo").files;
+if(!files.length){alert("Please choose a photo first.");return;}
+let status=document.getElementById("status");
+status.textContent="Reading worksheet... Please wait.";
+let worker;
+try{
+worker=await Tesseract.createWorker("eng");
+for(let file of files){
+let result=await worker.recognize(file);
+let lines=result.data.text.split("\n")
+.map(x=>x.trim()).filter(Boolean);
+lines.forEach(line=>{
+pages[currentPage].questions.push({text:line,answer:""});
+});
+}
+await worker.terminate();
+status.textContent="Worksheet text read! Check the questions and edit if needed.";
+render();
+}catch(e){
+if(worker) await worker.terminate();
+status.textContent="Could not read the photo. Please try again with a clearer image.";
+}
+}
+
+function speakAnswer(index){
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SpeechRecognition){
+alert("Voice typing is not supported in this browser. You can type your answer.");
+return;
+}
+let recognition=new SpeechRecognition();
+recognition.lang="en-IN";
+recognition.onresult=e=>{
+let text=e.results[0][0].transcript;
+let q=pages[currentPage].questions[index];
+q.answer+=(q.answer?" ":"")+text;
+render();
+};
+recognition.start();
+}
+
+function addNextPage(){
+currentPage++;
+if(!pages[currentPage])pages.push(makePage());
+document.getElementById("results").hidden=true;
+document.getElementById("photo").value="";
+document.getElementById("status").textContent="Choose photos for this page.";
+render();
+window.scrollTo(0,0);
+}
+
+function showResults(){
+let area=document.getElementById("resultContent");
+area.innerHTML="";
+pages.forEach((page,p)=>{
+let heading=document.createElement("h3");
+heading.textContent="Page "+(p+1);
+area.appendChild(heading);
+page.questions.forEach((q,i)=>{
+let div=document.createElement("p");
+let b=document.createElement("b");
+b.textContent="Q"+(i+1)+": "+q.text;
+let a=document.createElement("p");
+a.textContent="Answer: "+(q.answer||"Not answered");
+div.append(b,a);
+area.appendChild(div);
+});
+});
+document.getElementById("results").hidden=false;
+document.getElementById("results").scrollIntoView({behavior:"smooth"});
+}
+
+render();
+</script>
+</body>
+</html>
