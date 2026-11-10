@@ -8,152 +8,460 @@
 <title>Smart Worksheet</title>
 <link rel="manifest" href="manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial;background:#f5f0ff;color:#29213b}
-header{background:#7654c5;color:white;padding:20px;text-align:center}
-main{padding:16px;max-width:700px;margin:auto}
-.card{background:white;padding:16px;border-radius:16px;margin:14px 0;box-shadow:0 3px 12px #0001}
-button,.upload{background:#7654c5;color:white;border:0;padding:12px 16px;border-radius:10px;font-size:15px;margin:5px;cursor:pointer}
-input,textarea{width:100%;padding:12px;border:1px solid #d7cbea;border-radius:9px;margin:8px 0;font-size:16px}
-textarea{min-height:90px}
-.question{border-bottom:1px solid #eee;padding:12px 0}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#f5f0ff;
+  color:#29213b;
+}
+header{
+  background:#7654c5;
+  color:white;
+  padding:20px;
+  text-align:center;
+}
+main{
+  max-width:700px;
+  padding:15px;
+  margin:auto;
+}
+.card{
+  background:white;
+  padding:18px;
+  border-radius:16px;
+  margin:15px 0;
+  box-shadow:0 3px 12px #0001;
+}
+button{
+  background:#7654c5;
+  color:white;
+  border:0;
+  padding:12px 17px;
+  border-radius:10px;
+  margin:5px;
+  font-size:15px;
+  cursor:pointer;
+}
+button:disabled{opacity:.5}
+input,textarea{
+  width:100%;
+  padding:12px;
+  border:1px solid #d7cbea;
+  border-radius:9px;
+  margin:7px 0;
+  font-size:16px;
+}
+textarea{min-height:85px}
+.option{
+  display:block;
+  background:#f5f0ff;
+  border:2px solid #e4daf5;
+  border-radius:10px;
+  padding:13px;
+  margin:9px 0;
+  cursor:pointer;
+}
+.option.selected{
+  border-color:#7654c5;
+  background:#e9dfff;
+}
+.option input{width:auto}
+.hidden{display:none}
 .small{color:#71677f;font-size:13px}
-#status{font-size:14px;color:#7654c5}
+.progress{
+  background:#e5dcf2;
+  height:9px;
+  border-radius:10px;
+  overflow:hidden;
+}
+#progressBar{
+  background:#7654c5;
+  height:100%;
+  width:0%;
+}
 </style>
 </head>
+
 <body>
 <header>
 <h1>📚 Smart Worksheet</h1>
 <p>Upload • Read • Answer • Review</p>
 </header>
+
 <main>
-<div class="card">
-<h3>Upload worksheet photo</h3>
-<input type="file" id="photo" accept="image/*" multiple>
-<button onclick="readPhotos()">Read worksheet</button>
-<p id="status">Choose a worksheet photo to begin.</p>
-</div>
 
-<div class="card">
-<h3 id="pageTitle">Worksheet Page 1</h3>
-<div id="questions"></div>
-<button onclick="addNextPage()">Next Page ➜</button>
-<button onclick="showResults()">View Results</button>
-</div>
+<section class="card" id="uploadSection">
+<h2>Upload your worksheet</h2>
+<p>Select one or more worksheet photos.</p>
+<input type="file" id="photos" accept="image/*" multiple>
+<button onclick="readWorksheet()">Read Photos</button>
+<p id="status" class="small"></p>
+</section>
 
-<div class="card" id="results" hidden>
-<h2>📝 Your Answers</h2>
-<div id="resultContent"></div>
+<section class="card hidden" id="typeSection">
+<h2>What type of worksheet is this?</h2>
+<button onclick="chooseType('mcq')">MCQ Type</button>
+<button onclick="chooseType('other')">Other Type</button>
+<button onclick="chooseType('questionnaire')">Questionnaire Type</button>
+</section>
+
+<section class="card hidden" id="editSection">
+<h2>Check detected questions</h2>
+<p class="small">
+Please correct any words or options that the photo reader has misread.
+The app cannot guarantee perfect text recognition.
+</p>
+<div id="editQuestions"></div>
+<button onclick="startTest()">Start My Test</button>
+</section>
+
+<section class="card hidden" id="testSection">
+<h2 id="questionNumber"></h2>
+<div class="progress">
+<div id="progressBar"></div>
+</div>
+<div id="questionArea"></div>
+<button onclick="submitAnswer()">Submit Answer ➜</button>
+<button onclick="showResults()">Finish Test</button>
+<p class="small">Your submitted answers can still be edited in Results.</p>
+</section>
+
+<section class="card hidden" id="resultsSection">
+<h2>🏆 Your Results</h2>
+<div id="resultsArea"></div>
+<button onclick="backToTest()">Edit Answers</button>
 <button onclick="window.print()">Print Results</button>
-</div>
+</section>
+
 </main>
 
 <script>
-let pages=[];
-let currentPage=0;
+let questions=[];
+let current=0;
+let worksheetType="mcq";
 
-function makePage(){
-return {questions:[]};
-}
-pages.push(makePage());
+async function readWorksheet(){
+  const files=document.getElementById("photos").files;
+  const status=document.getElementById("status");
 
-function render(){
-document.getElementById("pageTitle").textContent=
-"Worksheet Page "+(currentPage+1);
-let area=document.getElementById("questions");
-area.innerHTML="";
-pages[currentPage].questions.forEach((q,i)=>{
-let div=document.createElement("div");
-div.className="question";
-let title=document.createElement("b");
-title.textContent="Question "+(i+1)+": "+q.text;
-let answer=document.createElement("textarea");
-answer.placeholder="Write your answer here...";
-answer.value=q.answer||"";
-answer.oninput=()=>q.answer=answer.value;
-let voice=document.createElement("button");
-voice.textContent="🎤 Speak Answer";
-voice.onclick=()=>speakAnswer(i);
-div.append(title,answer,voice);
-area.appendChild(div);
-});
-}
+  if(!files.length){
+    alert("Please select a worksheet photo.");
+    return;
+  }
 
-async function readPhotos(){
-let files=document.getElementById("photo").files;
-if(!files.length){alert("Please choose a photo first.");return;}
-let status=document.getElementById("status");
-status.textContent="Reading worksheet... Please wait.";
-let worker;
-try{
-worker=await Tesseract.createWorker("eng");
-for(let file of files){
-let result=await worker.recognize(file);
-let lines=result.data.text.split("\n")
-.map(x=>x.trim()).filter(Boolean);
-lines.forEach(line=>{
-pages[currentPage].questions.push({text:line,answer:""});
-});
-}
-await worker.terminate();
-status.textContent="Worksheet text read! Check the questions and edit if needed.";
-render();
-}catch(e){
-if(worker) await worker.terminate();
-status.textContent="Could not read the photo. Please try again with a clearer image.";
-}
+  status.textContent="Reading your photos. Please wait...";
+  questions=[];
+
+  let worker;
+
+  try{
+    worker=await Tesseract.createWorker("eng");
+
+    for(let file of files){
+      const result=await worker.recognize(file);
+      const text=result.data.text;
+      const parsed=parseQuestions(text);
+
+      questions.push(...parsed);
+    }
+
+    await worker.terminate();
+
+    if(!questions.length){
+      status.textContent="No questions detected. Try a clearer photo.";
+      return;
+    }
+
+    status.textContent="Text reading finished. Choose your worksheet type.";
+    document.getElementById("typeSection").classList.remove("hidden");
+  }catch(error){
+    if(worker) await worker.terminate();
+    status.textContent="Could not read the photo. Please try again.";
+  }
 }
 
-function speakAnswer(index){
-const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(!SpeechRecognition){
-alert("Voice typing is not supported in this browser. You can type your answer.");
-return;
-}
-let recognition=new SpeechRecognition();
-recognition.lang="en-IN";
-recognition.onresult=e=>{
-let text=e.results[0][0].transcript;
-let q=pages[currentPage].questions[index];
-q.answer+=(q.answer?" ":"")+text;
-render();
-};
-recognition.start();
+function parseQuestions(text){
+  const lines=text.split(/\r?\n/)
+    .map(x=>x.trim())
+    .filter(Boolean);
+
+  let list=[];
+  let currentQuestion=null;
+
+  const questionPattern=/^(?:Q(?:uestion)?\s*)?\d{1,3}\s*[.)\-:]\s*(.+)$/i;
+  const optionPattern=/^([A-D])\s*[).:\-]\s*(.+)$/i;
+
+  for(const line of lines){
+    const optionMatch=line.match(optionPattern);
+    const questionMatch=line.match(questionPattern);
+
+    if(optionMatch){
+      if(!currentQuestion){
+        currentQuestion={
+          text:"Please enter the question",
+          options:[],
+          answer:"",
+          submitted:false
+        };
+        list.push(currentQuestion);
+      }
+      currentQuestion.options.push({
+        label:optionMatch[1].toUpperCase(),
+        text:optionMatch[2]
+      });
+    }
+    else if(questionMatch){
+      currentQuestion={
+        text:questionMatch[1],
+        options:[],
+        answer:"",
+        submitted:false
+      };
+      list.push(currentQuestion);
+    }
+    else if(currentQuestion){
+      currentQuestion.text+=" "+line;
+    }
+    else{
+      currentQuestion={
+        text:line,
+        options:[],
+        answer:"",
+        submitted:false
+      };
+      list.push(currentQuestion);
+    }
+  }
+
+  return list;
 }
 
-function addNextPage(){
-currentPage++;
-if(!pages[currentPage])pages.push(makePage());
-document.getElementById("results").hidden=true;
-document.getElementById("photo").value="";
-document.getElementById("status").textContent="Choose photos for this page.";
-render();
-window.scrollTo(0,0);
+function chooseType(type){
+  worksheetType=type;
+  document.getElementById("typeSection").classList.add("hidden");
+  document.getElementById("editSection").classList.remove("hidden");
+  renderEditor();
+}
+
+function renderEditor(){
+  const area=document.getElementById("editQuestions");
+  area.innerHTML="";
+
+  questions.forEach((q,i)=>{
+    const box=document.createElement("div");
+    box.className="card";
+
+    const heading=document.createElement("h3");
+    heading.textContent="Question "+(i+1);
+    box.appendChild(heading);
+
+    const questionInput=document.createElement("textarea");
+    questionInput.value=q.text;
+    questionInput.placeholder="Enter the original question";
+    questionInput.oninput=()=>q.text=questionInput.value;
+    box.appendChild(questionInput);
+
+    if(worksheetType==="mcq"){
+      while(q.options.length<2){
+        q.options.push({
+          label:String.fromCharCode(65+q.options.length),
+          text:""
+        });
+      }
+
+      q.options.forEach((opt,j)=>{
+        const label=document.createElement("label");
+        label.textContent="Option "+opt.label;
+
+        const input=document.createElement("input");
+        input.value=opt.text;
+        input.placeholder="Enter original option";
+        input.oninput=()=>opt.text=input.value;
+
+        box.append(label,input);
+      });
+    }
+
+    area.appendChild(box);
+  });
+}
+
+function startTest(){
+  if(!questions.length){
+    alert("No questions available.");
+    return;
+  }
+
+  current=0;
+  document.getElementById("editSection").classList.add("hidden");
+  document.getElementById("testSection").classList.remove("hidden");
+  renderQuestion();
+}
+
+function renderQuestion(){
+  const q=questions[current];
+
+  document.getElementById("questionNumber").textContent=
+    "Question "+(current+1)+" of "+questions.length;
+
+  document.getElementById("progressBar").style.width=
+    ((current+1)/questions.length*100)+"%";
+
+  const area=document.getElementById("questionArea");
+  area.innerHTML="";
+
+  const heading=document.createElement("h3");
+  heading.textContent=q.text;
+  area.appendChild(heading);
+
+  if(worksheetType==="mcq"){
+    q.options.forEach(opt=>{
+      const label=document.createElement("label");
+      label.className="option"+(q.answer===opt.label?" selected":"");
+
+      const radio=document.createElement("input");
+      radio.type="radio";
+      radio.name="answer";
+      radio.value=opt.label;
+      radio.checked=q.answer===opt.label;
+
+      radio.onchange=()=>{
+        q.answer=opt.label;
+        renderQuestion();
+      };
+
+      label.append(radio," "+opt.label+". "+opt.text);
+      area.appendChild(label);
+    });
+  }else{
+    const answer=document.createElement("textarea");
+    answer.placeholder="Write your answer here...";
+    answer.value=q.answer||"";
+    answer.oninput=()=>q.answer=answer.value;
+    area.appendChild(answer);
+
+    const voice=document.createElement("button");
+    voice.textContent="🎤 Speak Answer";
+    voice.onclick=()=>speakAnswer();
+    area.appendChild(voice);
+  }
+}
+
+function submitAnswer(){
+  const q=questions[current];
+
+  if(!q.answer){
+    alert("Please select or write your answer first.");
+    return;
+  }
+
+  if(!confirm("Are you sure you want to submit this answer?")){
+    return;
+  }
+
+  q.submitted=true;
+
+  if(current<questions.length-1){
+    current++;
+    renderQuestion();
+  }else{
+    showResults();
+  }
+}
+
+function speakAnswer(){
+  const SpeechRecognition=
+    window.SpeechRecognition||window.webkitSpeechRecognition;
+
+  if(!SpeechRecognition){
+    alert("Voice typing is not supported in this browser.");
+    return;
+  }
+
+  const recognition=new SpeechRecognition();
+  recognition.lang="en-IN";
+
+  recognition.onresult=e=>{
+    questions[current].answer+=
+      (questions[current].answer?" ":"")+
+      e.results[0][0].transcript;
+    renderQuestion();
+  };
+
+  recognition.start();
 }
 
 function showResults(){
-let area=document.getElementById("resultContent");
-area.innerHTML="";
-pages.forEach((page,p)=>{
-let heading=document.createElement("h3");
-heading.textContent="Page "+(p+1);
-area.appendChild(heading);
-page.questions.forEach((q,i)=>{
-let div=document.createElement("p");
-let b=document.createElement("b");
-b.textContent="Q"+(i+1)+": "+q.text;
-let a=document.createElement("p");
-a.textContent="Answer: "+(q.answer||"Not answered");
-div.append(b,a);
-area.appendChild(div);
-});
-});
-document.getElementById("results").hidden=false;
-document.getElementById("results").scrollIntoView({behavior:"smooth"});
+  document.getElementById("testSection").classList.add("hidden");
+  document.getElementById("resultsSection").classList.remove("hidden");
+
+  const area=document.getElementById("resultsArea");
+  area.innerHTML="";
+
+  questions.forEach((q,i)=>{
+    const box=document.createElement("div");
+    box.className="card";
+
+    const heading=document.createElement("h3");
+    heading.textContent="Question "+(i+1)+": "+q.text;
+    box.appendChild(heading);
+
+    if(worksheetType==="mcq"){
+      q.options.forEach(opt=>{
+        const p=document.createElement("p");
+        p.textContent=opt.label+". "+opt.text;
+        if(q.answer===opt.label){
+          p.textContent+="  ✓ Your answer";
+        }
+        box.appendChild(p);
+      });
+
+      const selected=document.createElement("p");
+      selected.textContent="Selected answer: "+(q.answer||"Not answered");
+      box.appendChild(selected);
+
+      const select=document.createElement("select");
+      select.innerHTML='<option value="">Change answer</option>';
+
+      q.options.forEach(opt=>{
+        const option=document.createElement("option");
+        option.value=opt.label;
+        option.textContent=opt.label+". "+opt.text;
+        select.appendChild(option);
+      });
+
+      select.value=q.answer;
+      select.onchange=()=>q.answer=select.value;
+      box.appendChild(select);
+    }else{
+      const answer=document.createElement("textarea");
+      answer.value=q.answer||"";
+      answer.oninput=()=>q.answer=answer.value;
+      box.appendChild(answer);
+    }
+
+    area.appendChild(box);
+  });
 }
 
-render();
+function backToTest(){
+  document.getElementById("resultsSection").classList.add("hidden");
+  document.getElementById("testSection").classList.remove("hidden");
+
+  current=0;
+  renderQuestion();
+}
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("./service-worker.js")
+      .catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
+
